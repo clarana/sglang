@@ -36,7 +36,7 @@ from sglang.srt.layers.linear import (
     QKVParallelLinear,
     RowParallelLinear,
 )
-from sglang.srt.layers.logits_processor import LogitsProcessor
+from sglang.srt.layers.logits_processor import LogitsProcessor, LogitsProcessorOutput
 from sglang.srt.layers.quantization.base_config import QuantizationConfig
 from sglang.srt.layers.radix_attention import RadixAttention
 from sglang.srt.layers.torchao_utils import apply_torchao_config_
@@ -109,7 +109,7 @@ class OlmoAttention(nn.Module):
         # Attention output projection.
         self.o_proj = RowParallelLinear(
             self.total_num_heads * self.head_dim,
-            hidden_size,
+            self.hidden_size,
             bias=config.attention_bias,
             quant_config=quant_config,
         )
@@ -187,7 +187,7 @@ class OlmoDecoderLayer(nn.Module):
                  quant_config: Optional[QuantizationConfig] = None):
         super().__init__()
         # Attention block.
-        self.self_attn = OlmoAttention(config, quant_config, layer_id=layer_id)
+        self.self_attn = OlmoAttention(config, layer_id=layer_id, quant_config=quant_config)
 
         # MLP block.
         self.mlp = OlmoMLP(config, quant_config)
@@ -275,10 +275,12 @@ class OlmoForCausalLM(nn.Module):
     """
     def __init__(self,
                  config: OlmoConfig,
-                 quant_config: Optional[QuantizationConfig] = None):
+                 quant_config: Optional[QuantizationConfig] = None,
+                 cache_config: Optional[CacheConfig] = None,):
         super().__init__()
         self.config = config
         self.quant_config = quant_config
+        self.torchao_config = global_server_args_dict["torchao_config"]
         self.model = OlmoModel(config, quant_config)
         if config.tie_word_embeddings:
             self.lm_head_weight = self.model.embed_tokens.weight
@@ -342,4 +344,4 @@ class OlmoForCausalLM(nn.Module):
 
         apply_torchao_config_(self, params_dict, set(["proj.weight"]))
 
-EntryClass = [OlmoForCausalLM]
+EntryClass = OlmoForCausalLM
