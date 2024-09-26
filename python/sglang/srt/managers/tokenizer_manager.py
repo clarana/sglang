@@ -179,7 +179,17 @@ class TokenizerManager:
             else:
                 input_ids = obj.input_ids if not_use_index else obj.input_ids[index]
 
-            self._validate_input_length(input_ids)
+            try:
+                self._validate_input_length(input_ids)
+            except ValueError as e:
+                if self.server_args.longer_seqs_ok:
+                    logger.info(f"Error -> Warning: {e}")
+                else:
+                    raise ValueError(e)
+                print(e)
+            except Exception as e:
+                raise Exception(e)
+
 
             sampling_params = self._get_sampling_params(
                 obj.sampling_params if not_use_index else obj.sampling_params[index]

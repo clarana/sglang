@@ -220,6 +220,7 @@ class SRTRunner:
         max_loras_per_batch=4,
         disable_cuda_graph=False,
         disable_radix_cache=False,
+        longer_seqs_ok=False,
     ):
         self.is_generation = is_generation
         self.runtime = Runtime(
@@ -234,6 +235,7 @@ class SRTRunner:
             max_loras_per_batch=max_loras_per_batch,
             disable_cuda_graph=disable_cuda_graph,
             disable_radix_cache=disable_radix_cache,
+            longer_seqs_ok=longer_seqs_ok,
         )
 
     def forward(

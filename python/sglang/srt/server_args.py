@@ -38,6 +38,7 @@ class ServerArgs:
     kv_cache_dtype: str = "auto"
     trust_remote_code: bool = True
     context_length: Optional[int] = None
+    longer_seqs_ok: bool = False
     quantization: Optional[str] = None
     served_model_name: Optional[str] = None
     chat_template: Optional[str] = None
@@ -267,6 +268,11 @@ class ServerArgs:
             type=int,
             default=ServerArgs.context_length,
             help="The model's maximum context length. Defaults to None (will use the value from the model's config.json instead).",
+        )
+        parser.add_argument(
+            "--longer-seqs-ok",
+            action="store_true",
+            help="Whether to allow inference on sequences longer than specified context length (will raise only warning instead).",
         )
         parser.add_argument(
             "--quantization",

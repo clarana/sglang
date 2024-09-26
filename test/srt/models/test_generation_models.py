@@ -86,6 +86,7 @@ class TestGenerationModels(unittest.TestCase):
             tp_size=model_case.tp_size,
             torch_dtype=torch_dtype,
             is_generation=True,
+            longer_seqs_ok="olmo" in model_path.lower(),
         ) as srt_runner:
             srt_outputs = srt_runner.forward(prompts, max_new_tokens=max_new_tokens)
 
