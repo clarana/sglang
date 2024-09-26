@@ -31,6 +31,7 @@ from vllm.model_executor.layers.vocab_parallel_embedding import (
 from vllm.model_executor.model_loader.weight_utils import default_weight_loader
 
 from sglang.srt.layers.activation import SiluAndMul
+from sglang.srt.layers.layernorm import RMSNorm, OlmoLayerNorm
 from sglang.srt.layers.linear import (
     MergedColumnParallelLinear,
     QKVParallelLinear,
@@ -193,12 +194,12 @@ class OlmoDecoderLayer(nn.Module):
         self.mlp = OlmoMLP(config, quant_config)
 
         # LayerNorm
-        self.input_layernorm = nn.LayerNorm(config.hidden_size,
-                                            elementwise_affine=False,
-                                            bias=False)
-        self.post_attention_layernorm = nn.LayerNorm(config.hidden_size,
-                                                     elementwise_affine=False,
-                                                     bias=False)
+        self.input_layernorm = OlmoLayerNorm(config.hidden_size)#nn.LayerNorm(config.hidden_size,
+                               #             elementwise_affine=False,
+                               #             bias=False)
+        self.post_attention_layernorm = OlmoLayerNorm(config.hidden_size)#nn.LayerNorm(config.hidden_size,
+                                        #             elementwise_affine=False,
+                                        #             bias=False)
 
     def forward(
         self,
@@ -234,9 +235,9 @@ class OlmoModel(nn.Module):
             OlmoDecoderLayer(config, layer_idx, quant_config)
             for layer_idx in range(config.num_hidden_layers)
         ])
-        self.norm = nn.LayerNorm(config.hidden_size,
-                                 elementwise_affine=False,
-                                 bias=False)
+        self.norm = OlmoLayerNorm(config.hidden_size)#nn.LayerNorm(config.hidden_size,
+                    #             elementwise_affine=False,
+                    #             bias=False)
 
     def forward(
         self,

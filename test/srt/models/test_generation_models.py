@@ -51,7 +51,8 @@ CI_MODELS = [
 # All other models
 ALL_OTHER_MODELS = [
     ModelCase("Qwen/Qwen2-1.5B"),
-    ModelCase("allenai/OLMo-7B-0724-Instruct-hf"),
+    ModelCase("allenai/OLMo-1B-0724-hf"),
+    #ModelCase("allenai/OLMo-7B-0724-Instruct-hf"),
 ]
 
 TORCH_DTYPES = [torch.float16]
@@ -71,6 +72,9 @@ class TestGenerationModels(unittest.TestCase):
             model_case.rouge_l_tolerance,
         )
         max_new_tokens = 32
+        if "olmo" in model_path.lower():
+            print("truncating prompts to fit 4096 OLMo context length")
+            prompts = [p[:len(p)//2] for p in prompts]
 
         with HFRunner(
             model_path, torch_dtype=torch_dtype, is_generation=True

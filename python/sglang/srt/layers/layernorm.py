@@ -20,6 +20,7 @@ from typing import Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from sglang.srt.utils import is_hip
 
@@ -119,8 +120,34 @@ class GemmaRMSNorm(CustomOp):
         return out
 
 
+
+class OlmoLayerNorm(CustomOp):
+    """LayerNorm but with no learnable weight or bias."""
+    def __init__(self, hidden_size: int) -> None:
+        super().__init__()
+        self.normalized_shape = (hidden_size,)
+        self.variance_epsilon=1e-5
+
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        orig_dtype = hidden_states.dtype
+        return F.layer_norm(hidden_states.to(dtype=torch.float16), self.normalized_shape, None, None, eps=self.variance_epsilon).to(
+            orig_dtype
+        )
+
+    def forward_native(
+        self,
+        hidden_states: torch.Tensor,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        orig_dtype = x.dtype
+        x = x.float()#to(torch.float16)
+        variance = torch.var(x, dim=-1, keepdim=True)
+        x = (x - x.mean(dim=-1, keepdim=True)) * torch.rsqrt(variance + self.variance_epsilon)
+        x = x.to(orig_dtype)
+        return x
+
+
 if is_hip():
     logger.info(
         "FlashInfer is not available on AMD GPUs. Fallback to other kernel libraries."
     )
-    from vllm.model_executor.layers.layernorm import GemmaRMSNorm, RMSNorm
+    from vllm.model_executor.layers.layernorm import GemmaRMSNorm, RMSNorm # NOTE: OlmoLayerNorm unavailable
