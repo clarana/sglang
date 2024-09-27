@@ -139,7 +139,7 @@ class OlmoLayerNorm(CustomOp):
         hidden_states: torch.Tensor,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         orig_dtype = x.dtype
-        x = x.float()#to(torch.float16)
+        x = x.to(torch.float32)
         variance = torch.var(x, dim=-1, keepdim=True)
         x = (x - x.mean(dim=-1, keepdim=True)) * torch.rsqrt(variance + self.variance_epsilon)
         x = x.to(orig_dtype)
