@@ -12,7 +12,7 @@ from sglang.test.test_utils import (
     select_sglang_backend,
 )
 from sglang.utils import download_and_cache_file, dump_state_text, read_jsonl
-
+from codecarbon import OfflineEmissionsTracker
 INVALID = -9999999
 
 
@@ -82,12 +82,13 @@ def main(args):
 
     # Run requests
     tic = time.time()
-    states = few_shot_gsm8k.run_batch(
-        arguments,
-        temperature=0,
-        num_threads=args.parallel,
-        progress_bar=True,
-    )
+    with OfflineEmissionsTracker(country_iso_code="USA") as tracker:
+        states = few_shot_gsm8k.run_batch(
+            arguments,
+            temperature=0,
+            num_threads=args.parallel,
+            progress_bar=True,
+        )
     latency = time.time() - tic
 
     preds = []

@@ -23,7 +23,7 @@ import requests
 from sglang.srt.server import launch_server
 from sglang.srt.server_args import ServerArgs
 from sglang.srt.utils import kill_child_process
-
+from codecarbon import OfflineEmissionsTracker
 
 @dataclasses.dataclass
 class BenchArgs:
@@ -150,22 +150,23 @@ def run_benchmark(server_args: ServerArgs, bench_args: BenchArgs):
         run_name="",
         result_filename="",
     )
-
-    # benchmark
-    try:
-        for bs, il, ol in itertools.product(
-            bench_args.batch_size, bench_args.input_len, bench_args.output_len
-        ):
-            run_one_case(
-                base_url,
-                bs,
-                il,
-                ol,
-                bench_args.run_name,
-                bench_args.result_filename,
-            )
-    finally:
-        kill_child_process(proc.pid)
+    
+    with OfflineEmissionsTracker(country_iso_code="USA") as tracker:
+        # benchmark
+        try:
+            for bs, il, ol in itertools.product(
+                bench_args.batch_size, bench_args.input_len, bench_args.output_len
+            ):
+                run_one_case(
+                    base_url,
+                    bs,
+                    il,
+                    ol,
+                    bench_args.run_name,
+                    bench_args.result_filename,
+                )
+        finally:
+            kill_child_process(proc.pid)
 
     print(f"\nResults are saved to {bench_args.result_filename}")
 

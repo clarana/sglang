@@ -36,6 +36,7 @@ from transformers import (
     PreTrainedTokenizerBase,
     PreTrainedTokenizerFast,
 )
+from codecarbon import OfflineEmissionsTracker
 
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=6 * 60 * 60)
 
@@ -588,25 +589,26 @@ async def benchmark(
         print("Initial test run completed. Starting main benchmark run...")
 
     pbar = None if disable_tqdm else tqdm(total=len(input_requests))
-
-    benchmark_start_time = time.perf_counter()
-    tasks: List[asyncio.Task] = []
-    async for request in get_request(input_requests, request_rate):
-        prompt, prompt_len, output_len = request
-        request_func_input = RequestFuncInput(
-            model=model_id,
-            prompt=prompt,
-            api_url=api_url,
-            prompt_len=prompt_len,
-            output_len=output_len,
-            extra_request_body=extra_request_body,
-        )
-        tasks.append(
-            asyncio.create_task(
-                request_func(request_func_input=request_func_input, pbar=pbar)
+    
+    with OfflineEmissionsTracker(country_iso_code="USA") as tracker:
+        benchmark_start_time = time.perf_counter()
+        tasks: List[asyncio.Task] = []
+        async for request in get_request(input_requests, request_rate):
+            prompt, prompt_len, output_len = request
+            request_func_input = RequestFuncInput(
+                model=model_id,
+                prompt=prompt,
+                api_url=api_url,
+                prompt_len=prompt_len,
+                output_len=output_len,
+                extra_request_body=extra_request_body,
             )
-        )
-    outputs: List[RequestFuncOutput] = await asyncio.gather(*tasks)
+            tasks.append(
+                asyncio.create_task(
+                    request_func(request_func_input=request_func_input, pbar=pbar)
+                )
+            )
+        outputs: List[RequestFuncOutput] = await asyncio.gather(*tasks)
 
     if pbar is not None:
         pbar.close()

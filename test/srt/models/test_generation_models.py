@@ -31,6 +31,7 @@ import torch
 
 from sglang.test.runners import DEFAULT_PROMPTS, HFRunner, SRTRunner
 from sglang.test.test_utils import calculate_rouge_l
+from codecarbon import OfflineEmissionsTracker
 
 
 @dataclasses.dataclass
@@ -51,8 +52,9 @@ CI_MODELS = [
 # All other models
 ALL_OTHER_MODELS = [
     ModelCase("Qwen/Qwen2-1.5B"),
+    ModelCase("Qwen/Qwen2-7B"),
     ModelCase("allenai/OLMo-1B-0724-hf"),
-    #ModelCase("allenai/OLMo-7B-0724-Instruct-hf"),
+    ModelCase("allenai/OLMo-7B-0724-Instruct-hf"),
 ]
 
 TORCH_DTYPES = [torch.float16]
@@ -80,15 +82,16 @@ class TestGenerationModels(unittest.TestCase):
             model_path, torch_dtype=torch_dtype, is_generation=True
         ) as hf_runner:
             hf_outputs = hf_runner.forward(prompts, max_new_tokens=max_new_tokens)
-
-        with SRTRunner(
-            model_path,
-            tp_size=model_case.tp_size,
-            torch_dtype=torch_dtype,
-            is_generation=True,
-            longer_seqs_ok="olmo" in model_path.lower(),
-        ) as srt_runner:
-            srt_outputs = srt_runner.forward(prompts, max_new_tokens=max_new_tokens)
+        
+        with OfflineEmissionsTracker(country_iso_code="USA") as tracker:
+            with SRTRunner(
+                model_path,
+                tp_size=model_case.tp_size,
+                torch_dtype=torch_dtype,
+                is_generation=True,
+                longer_seqs_ok="olmo" in model_path.lower(),
+            ) as srt_runner:
+                srt_outputs = srt_runner.forward(prompts, max_new_tokens=max_new_tokens)
 
         for i in range(len(prompts)):
             # Compare input logprobs
