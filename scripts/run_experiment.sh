@@ -40,7 +40,7 @@ done
 python3 -m sglang.bench_serving --backend sglang --dataset-name sharegpt --num-prompts $2 --request-rate $3 --port $ipnport
 
 HOST_NICKNAME=$(python -c "print('$(hostname)'.split('.')[0])")
-cp emissions.csv /result/emissions.csv
-cp *.jsonl /result/
+cp emissions.csv /results/emissions.csv
+cp *.jsonl /results/
 mkdir -p /data/input/claran/results/batch/${MODEL////__}/$2_$3_$4_${HOST_NICKNAME}
-cp /result/* /data/input/claran/results/batch/${MODEL////__}/$2_$3_$4_${HOST_NICKNAME}
+cp /results/* /data/input/claran/results/batch/${MODEL////__}/$2_$3_$4_${HOST_NICKNAME}
