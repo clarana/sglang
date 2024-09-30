@@ -15,7 +15,7 @@ conda activate inf-carbon
 huggingface-cli login --token $HF_TOKEN
 wandb login --relogin $WANDB_KEY
 
-cp /data/input/claran/sglang/.codecarbon.config ~/.
+cp /data/input/claran/sglang/.codecarbon.config-$4 ~/.codecarbon.config
 
 MODEL=$1
 python -m sglang.launch_server --model-path $MODEL --enable-torch-compile --disable-radix-cache & server=localhost:30000/health
