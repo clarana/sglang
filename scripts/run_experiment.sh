@@ -20,7 +20,7 @@ ipnport=$(shuf -i30000-31999 -n1)
 
 MODEL=$1
 if [[ ${MODEL,,} == *"moe"* ]]; then
-  python -m sglang.launch_server --model-path $MODEL --enable-torch-compile --disable-radix-cache --port $ipnport & server=localhost:$ipnport/health --disable-cuda-graph
+  python -m sglang.launch_server --model-path $MODEL --enable-torch-compile --disable-radix-cache --port $ipnport --disable-cuda-graph & server=localhost:$ipnport/health
 else
   python -m sglang.launch_server --model-path $MODEL --enable-torch-compile --disable-radix-cache --port $ipnport & server=localhost:$ipnport/health
 fi
