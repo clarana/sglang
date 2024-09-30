@@ -38,6 +38,8 @@ done
 
 python3 -m sglang.bench_serving --backend sglang --dataset-name sharegpt --num-prompts $2 --request-rate $3
 
+HOST_NICKNAME=$(python -c "print('$(hostname)'.split('.')[0])")
 cp emissions.csv /result/emissions.csv
 cp *.jsonl /result/
-
+mkdir -p /data/input/claran/batch/${MODEL////__}/$2_$3_$4_${HOST_NICKNAME}
+cp /result/* /data/input/claran/batch/${MODEL////__}/$2_$3_$4_${HOST_NICKNAME}
