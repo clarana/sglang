@@ -37,6 +37,7 @@ from transformers import (
     PreTrainedTokenizerFast,
 )
 from codecarbon import OfflineEmissionsTracker
+import wandb
 
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=6 * 60 * 60)
 
@@ -590,7 +591,9 @@ async def benchmark(
 
     pbar = None if disable_tqdm else tqdm(total=len(input_requests))
     
-    with OfflineEmissionsTracker(country_iso_code="USA") as tracker:
+    host_nickname = os.environ['HOSTNAME'].split('.')[0]
+
+    with OfflineEmissionsTracker(country_iso_code="USA", project_name=f"{backend}_{model_id.replace('/', '__')}_{host_nickname}_{args.num_prompts}_{request_rate}") as tracker:
         benchmark_start_time = time.perf_counter()
         tasks: List[asyncio.Task] = []
         async for request in get_request(input_requests, request_rate):
@@ -711,8 +714,8 @@ async def benchmark(
         if args.dataset_name == "random":
             output_file_name = f"{args.backend}_{now}_{args.num_prompts}_{args.random_input_len}_{args.random_output_len}.jsonl"
         else:
-            output_file_name = f"{args.backend}_{now}_{args.num_prompts}_sharegpt.jsonl"
-
+            output_file_name = f"{args.backend}_{now}_{model_id.replace('/', '__')}_{host_nickname}_{args.num_prompts}_{request_rate}_sharegpt.jsonl"
+    
     # Append results to a JSONL file
     with open(output_file_name, "a") as file:
         file.write(json.dumps(result) + "\n")
@@ -747,6 +750,8 @@ async def benchmark(
         "mean_e2e_latency_ms": metrics.mean_e2e_latency_ms,
         "median_e2e_latency_ms": metrics.median_e2e_latency_ms,
     }
+    wandb.log(result)
+
     return result
 
 
@@ -1025,4 +1030,9 @@ if __name__ == "__main__":
         "additional generate params like sampling params.",
     )
     args = parser.parse_args()
+    run = wandb.init(project="olmo-resource-inf", config={'model_name': args.model,
+        'dataset_name': args.dataset_name,
+        'request_rate': args.request_rate,
+        'num_prompts': args.num_prompts})
     run_benchmark(args)
+    run.config.update({'model_name': args.model}, allow_val_change=True)
