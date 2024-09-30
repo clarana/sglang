@@ -19,7 +19,11 @@ cp /data/input/claran/.codecarbon.config-$4 ~/.codecarbon.config
 ipnport=$(shuf -i30000-31999 -n1)
 
 MODEL=$1
-python -m sglang.launch_server --model-path $MODEL --enable-torch-compile --disable-radix-cache --port $ipnport & server=localhost:$ipnport/health
+if [[ ${MODEL,,} == *"moe"* ]]; then
+  python -m sglang.launch_server --model-path $MODEL --enable-torch-compile --disable-radix-cache --port $ipnport & server=localhost:$ipnport/health --disable-cuda-graph
+else
+  python -m sglang.launch_server --model-path $MODEL --enable-torch-compile --disable-radix-cache --port $ipnport & server=localhost:$ipnport/health
+fi
 timeout=1200   # 20 minutes in seconds
 interval=10    # Interval between pings
 
