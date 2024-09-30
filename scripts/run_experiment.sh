@@ -15,10 +15,11 @@ conda activate inf-carbon
 huggingface-cli login --token $HF_TOKEN
 wandb login --relogin $WANDB_KEY
 
-cp /data/input/claran/sglang/.codecarbon.config-$4 ~/.codecarbon.config
+cp /data/input/claran/.codecarbon.config-$4 ~/.codecarbon.config
+ipnport=$(shuf -i30000-31999 -n1)
 
 MODEL=$1
-python -m sglang.launch_server --model-path $MODEL --enable-torch-compile --disable-radix-cache & server=localhost:30000/health
+python -m sglang.launch_server --model-path $MODEL --enable-torch-compile --disable-radix-cache --port $ipnport & server=localhost:$ipnport/health
 timeout=1200   # 20 minutes in seconds
 interval=10    # Interval between pings
 
@@ -36,10 +37,10 @@ while ! curl "$server" &> /dev/null; do
     fi
 done
 
-python3 -m sglang.bench_serving --backend sglang --dataset-name sharegpt --num-prompts $2 --request-rate $3
+python3 -m sglang.bench_serving --backend sglang --dataset-name sharegpt --num-prompts $2 --request-rate $3 --port $ipnport
 
 HOST_NICKNAME=$(python -c "print('$(hostname)'.split('.')[0])")
 cp emissions.csv /result/emissions.csv
 cp *.jsonl /result/
-mkdir -p /data/input/claran/batch/${MODEL////__}/$2_$3_$4_${HOST_NICKNAME}
-cp /result/* /data/input/claran/batch/${MODEL////__}/$2_$3_$4_${HOST_NICKNAME}
+mkdir -p /data/input/claran/results/batch/${MODEL////__}/$2_$3_$4_${HOST_NICKNAME}
+cp /result/* /data/input/claran/results/batch/${MODEL////__}/$2_$3_$4_${HOST_NICKNAME}
