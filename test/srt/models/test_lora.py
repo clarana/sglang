@@ -1,21 +1,19 @@
-"""
-Copyright 2023-2024 SGLang Team
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-"""
+# Copyright 2023-2024 SGLang Team
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
 
 import multiprocessing as mp
 import unittest
-import uuid
 
 import torch
 
@@ -27,6 +25,7 @@ LORA_SETS = [
     #     "loras": ["RuterNorway/Llama-2-7b-chat-norwegian-LoRa"],
     # },
     {"base": "meta-llama/Llama-2-7b-hf", "loras": ["winddude/wizardLM-LlaMA-LoRA-7B"]},
+    # {"base": "Qwen/Qwen2.5-14B-Instruct", "loras": ["mssongit/Qwen2.5-14B-SFT-LoRA"]},
     # {"base": "mistralai/Mistral-7B-Instruct-v0.3", "loras": ["/home/ying/test_lora"]},
     # {
     #     "base": "mistralai/Mistral-7B-Instruct-v0.3",
@@ -45,7 +44,7 @@ TORCH_DTYPES = [torch.float16]
 PROMPTS = [
     """
 ### Instruction:
-Write a poem about the transformers Python library. 
+Write a poem about the transformers Python library.
 Mention the word "large language models" in that poem.
 ### Response:
 The Transformers are large language models,
@@ -85,9 +84,9 @@ class TestLoRA(unittest.TestCase):
 
         with SRTRunner(
             base_path,
-            tp_size=tp_size,
             torch_dtype=torch_dtype,
-            is_generation=True,
+            model_type="generation",
+            tp_size=tp_size,
             lora_paths=all_lora_paths,
             max_loras_per_batch=3,
             disable_cuda_graph=True,
@@ -98,9 +97,7 @@ class TestLoRA(unittest.TestCase):
             )
 
         with HFRunner(
-            base_path,
-            torch_dtype=torch_dtype,
-            is_generation=True,
+            base_path, torch_dtype=torch_dtype, model_type="generation"
         ) as hf_runner:
             hf_outputs = hf_runner.forward(
                 prompts, max_new_tokens=max_new_tokens, lora_paths=batch_lora_paths
@@ -109,7 +106,7 @@ class TestLoRA(unittest.TestCase):
         with HFRunner(
             base_path,
             torch_dtype=torch_dtype,
-            is_generation=True,
+            model_type="generation",
         ) as hf_runner:
             hf_no_lora_outputs = hf_runner.forward(
                 prompts, max_new_tokens=max_new_tokens
@@ -119,7 +116,7 @@ class TestLoRA(unittest.TestCase):
             base_path,
             tp_size=tp_size,
             torch_dtype=torch_dtype,
-            is_generation=True,
+            model_type="generation",
         ) as srt_runner:
             srt_no_lora_outputs = srt_runner.forward(
                 prompts, max_new_tokens=max_new_tokens
@@ -173,7 +170,7 @@ class TestLoRA(unittest.TestCase):
         print(f"{srt_no_lora_outputs.output_strs=}")
         for i in range(len(prompts)):
             assert srt_outputs.output_strs[i].strip(" ") == hf_outputs.output_strs[i], (
-                str_outputs.output_strs[i].strip(" "),
+                srt_outputs.output_strs[i].strip(" "),
                 hf_outputs.output_strs[i],
             )
             # assert (
@@ -199,7 +196,7 @@ class TestLoRA(unittest.TestCase):
             base_path,
             tp_size=tp_size,
             torch_dtype=torch_dtype,
-            is_generation=True,
+            model_type="generation",
             lora_paths=all_lora_paths,
             max_loras_per_batch=3,
             disable_cuda_graph=True,
@@ -212,7 +209,7 @@ class TestLoRA(unittest.TestCase):
         with HFRunner(
             base_path,
             torch_dtype=torch_dtype,
-            is_generation=True,
+            model_type="generation",
             output_str_only=True,
         ) as hf_runner:
             hf_outputs = hf_runner.forward(
@@ -238,7 +235,7 @@ class TestLoRA(unittest.TestCase):
             base_path,
             tp_size=tp_size,
             torch_dtype=torch_dtype,
-            is_generation=True,
+            model_type="generation",
         ) as srt_runner:
             srt_no_lora_outputs = srt_runner.forward(
                 prompts, max_new_tokens=max_new_tokens
@@ -248,7 +245,7 @@ class TestLoRA(unittest.TestCase):
             base_path,
             tp_size=tp_size,
             torch_dtype=torch_dtype,
-            is_generation=True,
+            model_type="generation",
             lora_paths=all_lora_paths,
         ) as srt_runner:
             srt_outputs = srt_runner.forward(
@@ -267,7 +264,7 @@ class TestLoRA(unittest.TestCase):
 
         for i in range(len(prompts)):
             assert srt_outputs.output_strs[i].strip(" ") == hf_outputs.output_strs[i], (
-                str_outputs.output_strs[i].strip(" "),
+                srt_outputs.output_strs[i].strip(" "),
                 hf_outputs.output_strs[i],
             )
             assert (

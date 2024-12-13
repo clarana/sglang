@@ -24,7 +24,6 @@ from typing import Iterable, Optional, Tuple
 import torch
 from torch import nn
 from transformers import PretrainedConfig
-from vllm.config import CacheConfig
 from vllm.distributed import (
     get_tensor_model_parallel_rank,
     get_tensor_model_parallel_world_size,
@@ -35,18 +34,18 @@ from vllm.model_executor.layers.linear import (
     RowParallelLinear,
 )
 from vllm.model_executor.layers.rotary_embedding import get_rope
-from vllm.model_executor.layers.vocab_parallel_embedding import (
-    ParallelLMHead,
-    VocabParallelEmbedding,
-)
-from vllm.model_executor.model_loader.weight_utils import default_weight_loader
 
 from sglang.srt.layers.activation import SiluAndMul
 from sglang.srt.layers.layernorm import RMSNorm
 from sglang.srt.layers.logits_processor import LogitsProcessor
 from sglang.srt.layers.quantization.base_config import QuantizationConfig
 from sglang.srt.layers.radix_attention import RadixAttention
-from sglang.srt.model_executor.forward_batch_info import InputMetadata
+from sglang.srt.layers.vocab_parallel_embedding import (
+    ParallelLMHead,
+    VocabParallelEmbedding,
+)
+from sglang.srt.model_executor.forward_batch_info import ForwardBatch
+from sglang.srt.model_loader.weight_utils import default_weight_loader
 
 
 def _get_alibi_slopes(total_num_heads: int) -> torch.Tensor:
@@ -189,13 +188,13 @@ class BaiChuanAttention(nn.Module):
         self,
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
-        input_metadata: InputMetadata,
+        forward_batch: ForwardBatch,
     ) -> torch.Tensor:
         qkv, _ = self.W_pack(hidden_states)
         q, k, v = qkv.chunk(chunks=3, dim=-1)
         if self.postion_embedding != "ALIBI":
             q, k = self.rotary_emb(positions, q, k)
-        attn_output = self.attn(q, k, v, input_metadata)
+        attn_output = self.attn(q, k, v, forward_batch)
         output, _ = self.o_proj(attn_output)
         return output
 
@@ -237,7 +236,7 @@ class BaiChuanDecoderLayer(nn.Module):
         self,
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
-        input_metadata: InputMetadata,
+        forward_batch: ForwardBatch,
         residual: Optional[torch.Tensor],
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # Self Attention
@@ -249,7 +248,7 @@ class BaiChuanDecoderLayer(nn.Module):
         hidden_states = self.self_attn(
             positions=positions,
             hidden_states=hidden_states,
-            input_metadata=input_metadata,
+            forward_batch=forward_batch,
         )
 
         # Fully Connected
@@ -292,7 +291,7 @@ class BaiChuanModel(nn.Module):
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
-        input_metadata: InputMetadata,
+        forward_batch: ForwardBatch,
     ) -> torch.Tensor:
         hidden_states = self.embed_tokens(input_ids)
         residual = None
@@ -301,7 +300,7 @@ class BaiChuanModel(nn.Module):
             hidden_states, residual = layer(
                 positions,
                 hidden_states,
-                input_metadata,
+                forward_batch,
                 residual,
             )
         hidden_states, _ = self.norm(hidden_states, residual)
@@ -330,7 +329,6 @@ class BaiChuanBaseForCausalLM(nn.Module):
         self,
         config: PretrainedConfig,
         position_embedding: str,
-        cache_config: Optional[CacheConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
     ):
         super().__init__()
@@ -339,22 +337,23 @@ class BaiChuanBaseForCausalLM(nn.Module):
 
         self.quant_config = quant_config
         self.model = BaiChuanModel(config, position_embedding, quant_config)
-        self.lm_head = ParallelLMHead(
-            config.vocab_size, config.hidden_size, quant_config=quant_config
-        )
         if self.config.tie_word_embeddings:
-            self.lm_head.weight = self.model.embed_tokens.weight
+            self.lm_head = self.model.embed_tokens
+        else:
+            self.lm_head = ParallelLMHead(
+                config.vocab_size, config.hidden_size, quant_config=quant_config
+            )
         self.logits_processor = LogitsProcessor(config)
 
     def forward(
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
-        input_metadata: InputMetadata,
+        forward_batch: ForwardBatch,
     ) -> torch.Tensor:
-        hidden_states = self.model(input_ids, positions, input_metadata)
+        hidden_states = self.model(input_ids, positions, forward_batch)
         return self.logits_processor(
-            input_ids, hidden_states, self.lm_head.weight, input_metadata
+            input_ids, hidden_states, self.lm_head, forward_batch
         )
 
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
@@ -404,13 +403,12 @@ class BaichuanForCausalLM(BaiChuanBaseForCausalLM):
     def __init__(
         self,
         config,
-        cache_config: Optional[CacheConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
     ):
         if config.hidden_size == 4096:  # baichuan2 7b
-            super().__init__(config, "ROPE", cache_config, quant_config)
+            super().__init__(config, "ROPE", quant_config)
         else:  # baichuan 13b, baichuan2 13b
-            super().__init__(config, "ALIBI", cache_config, quant_config)
+            super().__init__(config, "ALIBI", quant_config)
 
 
 EntryClass = [BaichuanForCausalLM]

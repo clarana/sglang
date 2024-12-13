@@ -1,17 +1,16 @@
-"""
-Copyright 2023-2024 SGLang Team
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-"""
+# Copyright 2023-2024 SGLang Team
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
 
 import json
 import multiprocessing as mp
@@ -21,8 +20,9 @@ from typing import List, Union
 
 import torch
 import torch.nn.functional as F
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM
 
+from sglang.srt.hf_transformers_utils import get_tokenizer
 from sglang.srt.server import Runtime
 from sglang.test.test_utils import DEFAULT_PORT_FOR_SRT_TEST_RUNNER
 
@@ -57,6 +57,28 @@ def get_top_logprobs(logits, k):
     return logprobs
 
 
+def _get_sentence_transformer_embedding_model(model_path, torch_dtype):
+    from sentence_transformers import SentenceTransformer
+    from sentence_transformers.util import is_sentence_transformer_model
+
+    if is_sentence_transformer_model(model_path):
+        model = SentenceTransformer(
+            model_path,
+            model_kwargs={"torch_dtype": torch_dtype},
+        )
+    else:  # if no pre-trained sentence-transformers model
+        from sentence_transformers import models
+
+        word_embedding_model = models.Transformer(model_path).to(dtype=torch_dtype)
+        pooling_model = models.Pooling(
+            word_embedding_model.get_word_embedding_dimension(),
+            pooling_mode="lasttoken",
+        )
+        model = SentenceTransformer(modules=[word_embedding_model, pooling_model])
+
+    return model.cuda()
+
+
 @dataclass
 class ModelOutput:
     output_strs: List[str] = None
@@ -64,17 +86,18 @@ class ModelOutput:
     top_input_logprobs: List[torch.Tensor] = None
     top_output_logprobs: List[torch.Tensor] = None
     embed_logits: List[torch.Tensor] = None
+    scores: List[float] = None
 
 
 class HFRunner:
     def __init__(
         self,
-        model_path,
-        torch_dtype,
-        is_generation,
-        output_str_only=False,
+        model_path: str,
+        torch_dtype: torch.dtype,
+        model_type: str = "generation",
+        output_str_only: bool = False,
     ):
-        self.is_generation = is_generation
+        self.model_type = model_type
         self.output_str_only = output_str_only
 
         self.in_queue = mp.Queue()
@@ -91,34 +114,50 @@ class HFRunner:
         )
         self.model_proc.start()
 
-    def start_model_process(self, in_queue, out_queue, model_path, torch_dtype):
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            model_path,
-            torch_dtype=torch_dtype,
-        )
+    def needs_trust_remote_code(self, model_path):
+        models_needs_trust_remote = [
+            "LxzGordon/URM-LLaMa-3.1-8B",
+        ]
+        if model_path in models_needs_trust_remote:
+            return True
+        return False
 
-        if self.is_generation:
+    def start_model_process(self, in_queue, out_queue, model_path, torch_dtype):
+        # Apply model-specific patches
+        monkey_patch_gemma2_sdpa()
+
+        # Load the model and tokenizer
+        if self.model_type == "generation":
             self.base_model = AutoModelForCausalLM.from_pretrained(
                 model_path,
                 torch_dtype=torch_dtype,
                 trust_remote_code=False,
                 low_cpu_mem_usage=True,
             ).cuda()
-        else:
-            from sentence_transformers import SentenceTransformer
-
-            self.model = SentenceTransformer(
-                model_path,
-                model_kwargs={"torch_dtype": torch_dtype},
+        elif self.model_type == "embedding":
+            self.model = _get_sentence_transformer_embedding_model(
+                model_path, torch_dtype
             )
+        elif self.model_type == "reward":
+            from transformers import AutoModelForSequenceClassification
 
+            self.model = AutoModelForSequenceClassification.from_pretrained(
+                model_path,
+                torch_dtype=torch_dtype,
+                trust_remote_code=self.needs_trust_remote_code(model_path),
+            ).cuda()
+        else:
+            raise Exception(f"Unrecognized model type {self.model_type}")
+        self.tokenizer = get_tokenizer(model_path, torch_dtype=torch.dtype)
+
+        # Run forward
         while True:
             prompts, max_new_tokens, lora_paths = in_queue.get()
             if lora_paths is not None:
                 assert len(prompts) == len(lora_paths)
 
             if prompts is not None:
-                if self.is_generation:
+                if self.model_type == "generation":
                     output_strs = []
                     top_input_logprobs = []
                     top_output_logprobs = []
@@ -182,10 +221,26 @@ class HFRunner:
                         )
                     )
 
-                else:
+                elif self.model_type == "embedding":
                     assert not self.output_str_only
                     logits = self.model.encode(prompts).tolist()
                     out_queue.put(ModelOutput(embed_logits=logits))
+
+                elif self.model_type == "reward":
+                    scores = []
+                    for conv in prompts:
+                        conv_formatted = self.tokenizer.apply_chat_template(
+                            conv, tokenize=False
+                        )
+                        conv_tokenized = self.tokenizer(
+                            conv_formatted, return_tensors="pt"
+                        ).to("cuda")
+                        scores.append(
+                            float(self.model(**conv_tokenized).logits[0][0].item())
+                        )
+                    out_queue.put(ModelOutput(scores=scores))
+                else:
+                    raise Exception(f"Unrecognized model type {self.model_type}")
 
     def forward(
         self,
@@ -211,24 +266,25 @@ class HFRunner:
 class SRTRunner:
     def __init__(
         self,
-        model_path,
-        torch_dtype,
-        is_generation,
-        tp_size=1,
-        port=DEFAULT_PORT_FOR_SRT_TEST_RUNNER,
-        lora_paths=None,
-        max_loras_per_batch=4,
-        disable_cuda_graph=False,
-        disable_radix_cache=False,
+        model_path: str,
+        torch_dtype: torch.dtype,
+        model_type: str,
+        tp_size: int = 1,
+        port: int = DEFAULT_PORT_FOR_SRT_TEST_RUNNER,
+        lora_paths: List[str] = None,
+        max_loras_per_batch: int = 4,
+        disable_cuda_graph: bool = False,
+        disable_radix_cache: bool = False,
         longer_seqs_ok=False,
     ):
-        self.is_generation = is_generation
+        self.model_type = model_type
+        self.is_generation = model_type == "generation"
         self.runtime = Runtime(
             model_path=model_path,
             tp_size=tp_size,
             dtype=get_dtype_str(torch_dtype),
             port=port,
-            mem_fraction_static=0.69,
+            mem_fraction_static=0.65,
             trust_remote_code=False,
             is_embedding=not self.is_generation,
             lora_paths=lora_paths,
@@ -237,6 +293,7 @@ class SRTRunner:
             disable_radix_cache=disable_radix_cache,
             longer_seqs_ok=longer_seqs_ok,
         )
+        self.tokenizer = get_tokenizer(model_path)
 
     def forward(
         self,
@@ -290,8 +347,12 @@ class SRTRunner:
         else:
             response = self.runtime.encode(prompts)
             response = json.loads(response)
-            logits = [x["embedding"] for x in response]
-            return ModelOutput(embed_logits=logits)
+            if self.model_type == "embedding":
+                logits = [x["embedding"] for x in response]
+                return ModelOutput(embed_logits=logits)
+            else:
+                scores = [x["embedding"][0] for x in response]
+                return ModelOutput(scores=scores)
 
     def batch_forward(
         self,
@@ -321,8 +382,12 @@ class SRTRunner:
         else:
             response = self.runtime.encode(prompts)
             response = json.loads(response)
-            logits = [x["embedding"] for x in response]
-            return ModelOutput(embed_logits=logits)
+            if self.model_type == "embedding":
+                logits = [x["embedding"] for x in response]
+                return ModelOutput(embed_logits=logits)
+            else:
+                scores = [x["embedding"][0] for x in response]
+                return ModelOutput(scores=scores)
 
     def __enter__(self):
         return self
@@ -330,3 +395,18 @@ class SRTRunner:
     def __exit__(self, exc_type, exc_value, traceback):
         self.runtime.shutdown()
         del self.runtime
+
+
+def monkey_patch_gemma2_sdpa():
+    """
+    Use sdpa by default to fix the OOM issue.
+    Revert this commit:
+    https://github.com/huggingface/transformers/commit/975b988bfe6e7ebb47390cd9a1556c6888804883#diff-5f76eac6f18f4b491521314c318a9692318feb4d19228e9576cce7bde4240834R660
+    """
+    from transformers.models.gemma2.modeling_gemma2 import Gemma2PreTrainedModel
+
+    def _check_and_enable_sdpa(config, hard_check_only: bool = False):
+        config._attn_implementation = "sdpa"
+        return config
+
+    setattr(Gemma2PreTrainedModel, "_check_and_enable_sdpa", _check_and_enable_sdpa)

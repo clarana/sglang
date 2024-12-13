@@ -55,12 +55,13 @@ class RuntimeEndpoint(BaseBackend):
             self.base_url + "/flush_cache",
             api_key=self.api_key,
             verify=self.verify,
+            method="POST",
         )
         self._assert_success(res)
 
-    def get_server_args(self):
+    def get_server_info(self):
         res = http_request(
-            self.base_url + "/get_server_args",
+            self.base_url + "/get_server_info",
             api_key=self.api_key,
             verify=self.verify,
         )
@@ -235,6 +236,7 @@ class RuntimeEndpoint(BaseBackend):
         data = {"text": s.text_, "sampling_params": {"max_new_tokens": 0}}
         obj = self._generate_http_request(s, data)
         prompt_len = obj["meta_info"]["prompt_tokens"]
+        logprob_start_len = max(prompt_len - 2, 0)  # For token healing
 
         # Compute logprob
         data = {
@@ -244,7 +246,8 @@ class RuntimeEndpoint(BaseBackend):
                 "temperature": 0,
             },
             "return_logprob": True,
-            "logprob_start_len": max(prompt_len - 2, 0),  # for token healing
+            "return_text_in_logprobs": True,
+            "logprob_start_len": logprob_start_len,
         }
         obj = self._generate_http_request(s, data)
 
@@ -253,6 +256,17 @@ class RuntimeEndpoint(BaseBackend):
         ]
         input_token_logprobs = [r["meta_info"]["input_token_logprobs"] for r in obj]
         output_token_logprobs = [r["meta_info"]["output_token_logprobs"] for r in obj]
+
+        # Remove extra token if no token healing occurred
+        for i in range(len(input_token_logprobs)):
+            healed_token_str = input_token_logprobs[i][0][-1]
+            if s.text_.endswith(healed_token_str):
+                healed_token_logprob = input_token_logprobs[i][0][0]
+                normalized_prompt_logprobs[i] = (
+                    normalized_prompt_logprobs[i] * len(input_token_logprobs[i])
+                    - healed_token_logprob
+                ) / (len(input_token_logprobs[i]) - 1)
+                input_token_logprobs[i] = input_token_logprobs[i][1:]
 
         # Compute unconditional logprobs if required
         if choices_method.requires_unconditional_logprobs:
