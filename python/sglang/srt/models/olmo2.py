@@ -128,11 +128,13 @@ class Olmo2Attention(nn.Module):
         self, q: torch.Tensor, k: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         if self.tp_size > 1:
+            print("not supposed to be here!")
             q = tensor_model_parallel_all_gather(q.contiguous())
             k = tensor_model_parallel_all_gather(k.contiguous())
         q = self.q_norm.forward_native(q)
         k = self.k_norm.forward_native(k)
         if self.tp_size > 1:
+            print("not supposed to be here! (#2)")
             splitter = partial(split_tensor_along_last_dim, num_partitions=self.tp_size)
             q = splitter(q)[self.tp_rank]
             k = splitter(k)[self.tp_rank]
