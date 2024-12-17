@@ -20,9 +20,9 @@ ipnport=$(shuf -i30000-31999 -n1)
 
 MODEL=$1
 if [[ ${MODEL,,} == *"moe"* ]]; then
-  python -m sglang.launch_server --model-path $MODEL --enable-torch-compile --disable-radix-cache --tp_size 1 --port $ipnport --disable-cuda-graph & server=localhost:$ipnport/health
+  python -m sglang.launch_server --model-path $MODEL --enable-torch-compile --disable-radix-cache --tensor-parallel-size 1 --port $ipnport --disable-cuda-graph & server=localhost:$ipnport/health
 else
-  python -m sglang.launch_server --model-path $MODEL --enable-torch-compile --disable-radix-cache --tp_size 1 --port $ipnport & server=localhost:$ipnport/health
+  python -m sglang.launch_server --model-path $MODEL --enable-torch-compile --disable-radix-cache --tensor-parallel-size 1 --port $ipnport & server=localhost:$ipnport/health
 fi
 timeout=1200   # 20 minutes in seconds
 interval=10    # Interval between pings
