@@ -64,8 +64,9 @@ class Olmo2Attention(nn.Module):
         super().__init__()
         self.config = config
         self.hidden_size = config.hidden_size
-        tp_size = get_tensor_model_parallel_world_size()
+        tp_size = 1#get_tensor_model_parallel_world_size()
         self.total_num_heads = config.num_attention_heads
+        self.tp_size = 1
 
         assert self.hidden_size % self.total_num_heads == 0
         assert self.total_num_heads % tp_size == 0
